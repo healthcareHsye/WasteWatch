@@ -7,6 +7,7 @@ import io
 import base64
 import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
+import psutil
 
 app = Flask(__name__)
 app.secret_key = "your_secret_key_here"  # Replace with a secure key in production
@@ -731,6 +732,35 @@ def run_simulation(behavior, params, n_baseline, change, change_day, analysis_me
 def index():
     global previous_results
     if request.method == "POST":
+        # --------------------------
+        # Step 1: Block if system is under load
+        # --------------------------
+        mem = psutil.virtual_memory().percent
+        cpu = psutil.cpu_percent(interval=1)
+
+        if mem > 85 or cpu > 85:
+            return render_template_string(
+                "<h2 style='color:red;text-align:center;'> System is under high load. Please try again later.</h2>" + main_template,
+                results=previous_results,
+                full_params_exists=('full_params' in session),
+                nav_bar=nav_bar
+            )
+
+        # --------------------------
+        # Step 2: Soft cap if replications too high under medium load
+        # --------------------------
+        n_replications_str = request.form.get("n_replications", "0")
+        try:
+            if int(n_replications_str) > 1000 and (mem > 70 or cpu > 70):
+                return render_template_string(
+                    "<h2 style='color:red;text-align:center;'> Too many replications while system is moderately loaded. Please try a smaller number.</h2>" + main_template,
+                    results=previous_results,
+                    full_params_exists=('full_params' in session),
+                    nav_bar=nav_bar
+                )
+        except ValueError:
+            pass  # fallback to error later if needed
+
         fd = request.form.to_dict()
         try:
             n_baseline = int(fd.get("n_baseline", "0"))
